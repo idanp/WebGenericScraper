@@ -1,0 +1,3 @@
+from ScrapingMessageCreator import *
+
+test()
