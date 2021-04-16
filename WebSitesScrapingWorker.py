@@ -19,6 +19,7 @@ from WLO.src.Utils.Utils import *
 
 #from setup import VERSION
 VERSION = '0.0.1'
+POTENTIAL_DYNAMIC_JS_CONTENT = 'Please enable Javascript to use this application'
 
 
 
@@ -66,51 +67,115 @@ class WebSiteScarperWorker(WorkerAbstract):
             if 'inline_scrap_flow' in payload:
                 scrap_flow = payload['inline_scrap_flow']
 
-            page = requests.get(URL)
-            soup = BeautifulSoup(page.content, 'html.parser')
+
+
+            # pre process steps - mostly for prettify the html or get dynamic contents
+            if 'preProcess' in scrap_flow:
+                action = scrap_flow['preProcess'][0]
+                page = self.execute_action(URL, action)
+                soup = BeautifulSoup(page, 'html.parser')
+
+            else:
+                page = requests.get(URL)
+                soup = BeautifulSoup(page.content, 'html.parser')
+
+                if POTENTIAL_DYNAMIC_JS_CONTENT in soup.text:
+                    soup = BeautifulSoup(self.get_html_from_js(URL), 'html.parser')
+
+
+
+
+
 
             # Scrap the web page according to the yaml flow
             for link in scrap_flow['flow']:
                 self.execute_action(soup, link)
+            return
+
+    def expend_dynamic_HTML(self, URL, action_type, parent_element):
+        from selenium import webdriver
+        import time
+
+        driver = webdriver.Chrome()
+        driver.get(URL)
+        time.sleep(5)
+
+        parent_element_class = parent_element['class'] if 'class' in parent_element else None
+        parent_element_id = parent_element['id'] if 'id' in parent_element else None
+        child_element_type = parent_element['childType']
+
+        elements=None
+
+        if parent_element_class:
+            elements = driver.find_elements_by_class_name("menu-list-category")
+        if parent_element_id:
+            elements = driver.find_elements_by_id("menu-list-category")
+
+        if child_element_type == 'list':
+            for element in elements:
+                resp = element.click()
+            htmlSource = driver.page_source
+
+            return htmlSource
+        return None
 
 
+    def get_html_from_js(self, URL):
+        from selenium import webdriver
+        import time
 
-
+        driver = webdriver.Chrome()
+        driver.get(URL)
+        time.sleep(5)
+        htmlSource = driver.page_source
+        driver.close()
+        return htmlSource
 
     def execute_action(self, target_value ,execution_plan):
         result = None
-        if execution_plan['actionName'] == 'end':
-            result = target_value
 
+        action_name = execution_plan['actionName']
+        action_params = execution_plan['actionParams'] if 'actionParams' in execution_plan else []
+        sub_actions = execution_plan['subActions'] if 'subActions' in execution_plan else []
+        action_type = execution_plan['actionType'] if 'actionType' in execution_plan else 'Atomic'
+
+        single_action_result = self.run_single_action(target_value, action_name, action_params)
+
+        if len(sub_actions) > 0:
+            for action in sub_actions:
+                if 'actionType' in action:
+                    if action['actionType'] == 'loop':
+                        for elem in single_action_result:
+                            result = self.execute_action(elem, action)
+                    elif action['actionType'] == 'rec':
+                        result = self.execute_action(single_action_result, action)
+                    elif action['actionType'] == 'tree_dfs':
+                        for branch in self.get_dfs_branches(tree=single_action_result):
+                            result = self.execute_action(branch, action)
+
+                # loop over the current element and execute set of action per element in the loop
+                elif 'type' in action:
+                    if action['type'] == 'loop':
+                        actions = action['actions']
+                        for elem in single_action_result:
+                            for sub_action in actions:
+                                result = self.execute_action(elem, sub_action)
+
+                else:
+                    result = self.run_single_action(single_action_result, action['actionName'], action['actionParams'])
         else:
-            action_name = execution_plan['actionName']
-            action_params = execution_plan['actionParams'] if 'actionParams' in execution_plan else []
-            sub_actions = execution_plan['subActions'] if 'subActions' in execution_plan else []
-            action_type = execution_plan['actionType'] if 'actionType' in execution_plan else 'Atomic'
-
-            single_action_result = self.run_single_action(target_value, action_name, action_params)
-
-            if len(sub_actions) > 0:
-                for action in sub_actions:
-                    if 'actionType' in action:
-                        if action['actionType'] == 'loop':
-                            for elem in single_action_result:
-                                result = self.execute_action(elem, action)
-                        elif action['actionType'] == 'rec':
-                            result = self.execute_action(single_action_result, action)
-                        elif action['actionType'] == 'tree_dfs':
-                            for branch in self.get_dfs_branches(tree=single_action_result):
-                                result = self.execute_action(branch, action)
-                    else:
-                        result = self.run_single_action(single_action_result, action['actionName'], action['actionParams'])
-            else:
-                result = single_action_result
+            result = single_action_result
 
         return result
 
 
 
     def run_single_action(self, target_value, action_name, action_params):
+
+        if action_name == 'expendDynamicHTML':
+            action_type = action_params['type']
+            parent_element = action_params['parentElement']
+            return self.expend_dynamic_HTML(URL=target_value, action_type=action_type, parent_element=parent_element)
 
         # in this case target_value should be BeautifulSoup
         if action_name == 'path':
@@ -133,12 +198,14 @@ class WebSiteScarperWorker(WorkerAbstract):
             ending_point = action_params['EndingPoint'] if 'EndingPoint' in action_params else None
             tree_relations = action_params['treeRelations']
             save_to_var = action_params['saveToVar'] if 'saveToVar' in action_params else None
-            tree = self.buildConnectionTree(target_value=target_value,
-                                            starting_point=starting_point,
-                                            ending_point=ending_point,
-                                            tree_relations=tree_relations,
-                                            save_to_var=save_to_var)
+            tree = self.build_connection_tree(target_value=target_value,
+                                              starting_point=starting_point,
+                                              ending_point=ending_point,
+                                              tree_relations=tree_relations,
+                                              save_to_var=save_to_var)
             return tree[1]
+
+
 
         # tree to csv,
         if action_name == 'treeBranch2csv':
@@ -152,10 +219,18 @@ class WebSiteScarperWorker(WorkerAbstract):
         # in this case target_value should be BeautifulSoup
         if action_name == 'get':
             val = action_params['value']
+            fix_text_flag = action_params['fixText'] if 'fixText' in action_params else None
+
             if val == 'text':
-                return target_value.text
+                if fix_text_flag:
+                    return self.fix_text(target_value.text)
+                else:
+                    return target_value.text
             else:
-                return target_value.get(val)
+                if fix_text_flag:
+                    return self.fix_text(target_value.get(val))
+                else:
+                    return target_value.get(val)
 
         # in this case target_value should be string
         if action_name == 'substring':
@@ -204,7 +279,11 @@ class WebSiteScarperWorker(WorkerAbstract):
 
 
             if var_key and '$' in var_key:
-                var_key = self.execution_vars[var_key[1:]]
+                if var_key == '$.':
+                    var_key = target_value
+                else:
+                    var_key = self.execution_vars[var_key[1:]]
+
             var_value = action_params['varValue'] if 'varValue' in action_params else target_value
             if '$' in var_value:
                 var_value = self.execution_vars[var_value[1:]]
@@ -234,6 +313,15 @@ class WebSiteScarperWorker(WorkerAbstract):
         if action_name == 'getVar':
             var_name = action_params['varName']
             return self.execution_vars[var_name]
+
+        if action_name == 'cleanVar':
+            var_name = action_params['varName']
+            if type(self.execution_vars[var_name]) == list:
+                self.execution_vars[var_name] = []
+            elif type(self.execution_vars[var_name]) == dict:
+                self.execution_vars[var_name] = {}
+            else:
+                self.execution_vars[var_name] = ""
 
     def HTMLpath(self, soup , type, HTMLtype, id_, class_, exclude):
         logging.debug(f"{DRIVER_PREFIX}Going to scrap - {HTMLtype}, id - {id_}, class - {class_}")
@@ -299,9 +387,9 @@ class WebSiteScarperWorker(WorkerAbstract):
                 continue
 
         pre_defined_sub_data = []
-        for pre_def_header, pred_def_val in pre_defined_columns.items():
-            if '$' in pred_def_val:
-                value = pred_def_val[1:]
+        for pre_def_header, pre_def_val in pre_defined_columns.items():
+            if '$' in pre_def_val:
+                value = pre_def_val[1:]
 
                 # treating a list value
                 if '.' in value:
@@ -347,7 +435,7 @@ class WebSiteScarperWorker(WorkerAbstract):
         final_val = text.lstrip().rstrip().replace('"', '')
         return ' '.join(final_val.split())
 
-    def buildConnectionTree(self, target_value, starting_point, ending_point, tree_relations, save_to_var):
+    def build_connection_tree(self, target_value, starting_point, ending_point, tree_relations, save_to_var):
         '''
         This method iterate over all the childrens tags of target_value and from stating_point we build an
         hierarchy tree based on tree_relations (in case we have flat html that parent some parent-child relations
@@ -531,6 +619,7 @@ class WebSiteScarperWorker(WorkerAbstract):
 
 
 
+
 def init():
     return WebSiteScarperWorker()
 
@@ -582,8 +671,8 @@ if __name__ == '__main__':
     #TODO - Work on desc for params
     parser = argparse.ArgumentParser(description='', usage=print_help())
     parser.add_argument('--logLevel', required=False, type=str, default="INFO")
-    parser.add_argument('--scrapFlow', required=False, type=str, default=None)
-    parser.add_argument('--urlToScrap', required=False, type=str, default=None)
+    parser.add_argument('--scrapFlow', required=True, type=str, default=None)
+    parser.add_argument('--urlToScrap', required=True, type=str, default=None)
 
     args = parser.parse_args()
 
