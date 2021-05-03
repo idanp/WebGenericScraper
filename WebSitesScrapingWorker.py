@@ -20,7 +20,7 @@ from WLO.src.Utils.Utils import *
 #from setup import VERSION
 VERSION = '0.0.1'
 POTENTIAL_DYNAMIC_JS_CONTENT = 'Please enable Javascript to use this application'
-
+SERVICE="Scraper - "
 
 
 
@@ -47,11 +47,10 @@ class WebSiteScarperWorker(WorkerAbstract):
 
     def work(self, msg):
 
-
             logging.info(f"{DRIVER_PREFIX}Start!!")
 
             working_params = msg['params']
-            self.execution_vars['ServiceName'] = working_params['service_name'] if 'service_name' in working_params else None
+            self.execution_vars['title'] = working_params['title'] if 'title' in working_params else None
             payload = msg['payload']
 
             URL = payload['url_to_scrap']
@@ -82,17 +81,12 @@ class WebSiteScarperWorker(WorkerAbstract):
                 if POTENTIAL_DYNAMIC_JS_CONTENT in soup.text:
                     soup = BeautifulSoup(self.get_html_from_js(URL), 'html.parser')
 
-
-
-
-
-
             # Scrap the web page according to the yaml flow
             for link in scrap_flow['flow']:
                 self.execute_action(soup, link)
             return
 
-    def expend_dynamic_HTML(self, URL, action_type, parent_element):
+    def expend_dynamic_HTML(self, URL, action_type, element, contain_element):
         from selenium import webdriver
         import time
 
@@ -100,25 +94,63 @@ class WebSiteScarperWorker(WorkerAbstract):
         driver.get(URL)
         time.sleep(5)
 
-        parent_element_class = parent_element['class'] if 'class' in parent_element else None
-        parent_element_id = parent_element['id'] if 'id' in parent_element else None
-        child_element_type = parent_element['childType']
 
-        elements=None
+        # get the container element
+        if contain_element:
+            contain_element_class = contain_element['class'] if 'class' in contain_element else None
+            contain_element_id = contain_element['id'] if 'id' in contain_element else None
+            contain_element_html_type = contain_element['HTMLtype'] if 'HTMLtype' in contain_element else None
+            contain_element_value = contain_element['elementVal'] if 'elementVal' in contain_element else None
+            elements = self.get_elemnt_by(contain_element_class, contain_element_id, contain_element_html_type, contain_element_value, driver)
 
-        if parent_element_class:
-            elements = driver.find_elements_by_class_name("menu-list-category")
-        if parent_element_id:
-            elements = driver.find_elements_by_id("menu-list-category")
+            for soup_element in elements:
+                self.html_dynamic_expend_click(element=element, soup=soup_element)
+        else:
+            self.html_dynamic_expend_click(element=element, soup=driver)
 
-        if child_element_type == 'list':
+        htmlSource = driver.page_source
+        return htmlSource
+
+    def html_dynamic_expend_click(self,element, soup ):
+        element_class = element['class'] if 'class' in element else None
+        element_id = element['id'] if 'id' in element else None
+        element_type = element['elementType'] if 'elementType' in element else None
+        element_value = element['elementVal'] if 'elementVal' in element else None
+        element_html_type = element['HTMLtype'] if 'HTMLtype' in element else None
+
+        elements = self.get_elemnt_by(element_class, element_id, element_html_type, element_value, soup)
+        while(len(elements)>0):
+            child_elements = []
+            if element_type == 'list':
+                for element in elements:
+                    element.click()
+                    child_elements.extend(self.get_elemnt_by(element_class, element_id, element_html_type, element_value, element))
+            elements = child_elements.copy()
+
+
+    def get_elemnt_by(self, element_class, element_id, element_html_type, element_value, soup):
+
+        elements = []
+        if element_class:
+            elements = soup.find_elements_by_class_name(element_class)
+        if element_id:
+            elements = soup.find_elements_by_id(element_id)
+
+        if element_html_type:
+            filtered_elements = []
             for element in elements:
-                resp = element.click()
-            htmlSource = driver.page_source
+                if element.tag_name == element_html_type:
+                    filtered_elements.append(element)
+            elements = filtered_elements.copy()
 
-            return htmlSource
-        return None
+        if element_value:
+            filtered_elements = []
+            for element in elements:
+                if element.text == element_value:
+                    filtered_elements.append(element)
+            elements = filtered_elements.copy()
 
+        return elements
 
     def get_html_from_js(self, URL):
         from selenium import webdriver
@@ -173,19 +205,25 @@ class WebSiteScarperWorker(WorkerAbstract):
     def run_single_action(self, target_value, action_name, action_params):
 
         if action_name == 'expendDynamicHTML':
+            logging.info(f"{SERVICE}Start expand dynamic HTML")
             action_type = action_params['type']
-            parent_element = action_params['parentElement']
-            return self.expend_dynamic_HTML(URL=target_value, action_type=action_type, parent_element=parent_element)
+            element = action_params['Element']
+            contain_element = action_params['containElement'] if 'containElement' in action_params else None
+            return self.expend_dynamic_HTML(URL=target_value, action_type=action_type, element=element, contain_element=contain_element)
 
         # in this case target_value should be BeautifulSoup
+        # todo - add asChild condition to path - to get the path that has specific child
         if action_name == 'path':
+            logging.info(f"{SERVICE}path action")
             id_ = action_params['id'] if 'id' in action_params else None
             class_ = action_params['class'] if 'class' in action_params else None
             exclude = action_params['exclude'] if 'exclude' in action_params else None
-            elem_soup = self.HTMLpath(target_value, action_params['type'], action_params['HTMLtype'], id_, class_, exclude)
+            attr = action_params['attr'] if 'attr' in action_params else None
+            elem_soup = self.HTMLpath(target_value, action_params['type'], action_params['HTMLtype'], id_, class_,attr, exclude)
             return elem_soup
         
         if action_name == 'table2csv':
+            logging.info(f"{SERVICE}table2csv action")
             id_ = action_params['id'] if 'id' in action_params else None
             class_ = action_params['class'] if 'class' in action_params else None
             pre_defined_columns = action_params['preDefinedColumns'] if 'preDefinedColumns' in action_params else {}
@@ -194,6 +232,7 @@ class WebSiteScarperWorker(WorkerAbstract):
             return data_frame
         
         if action_name == 'buildConnectionTree':
+            logging.info(f"{SERVICE}buildConnectionTree action")
             starting_point = action_params['StartintPoint'] if 'StartintPoint' in action_params else None
             ending_point = action_params['EndingPoint'] if 'EndingPoint' in action_params else None
             tree_relations = action_params['treeRelations']
@@ -209,6 +248,7 @@ class WebSiteScarperWorker(WorkerAbstract):
 
         # tree to csv,
         if action_name == 'treeBranch2csv':
+            logging.info(f"{SERVICE}treeBranch2csv action")
             html_table_idx =  action_params['idxOfHtmlTable'] if 'idxOfHtmlTable' in action_params else  None
             pre_defined_columns = action_params['preDefinedColumns'] if 'preDefinedColumns' in action_params else None
             data_frame = self.tree_branch_to_csv(branch=target_value, html_table_idx = html_table_idx, pre_defined_columns=pre_defined_columns)
@@ -218,6 +258,7 @@ class WebSiteScarperWorker(WorkerAbstract):
 
         # in this case target_value should be BeautifulSoup
         if action_name == 'get':
+            logging.info(f"{SERVICE}get action")
             val = action_params['value']
             fix_text_flag = action_params['fixText'] if 'fixText' in action_params else None
 
@@ -234,26 +275,38 @@ class WebSiteScarperWorker(WorkerAbstract):
 
         # in this case target_value should be string
         if action_name == 'substring':
+            logging.info(f"{SERVICE}substring action")
             start = action_params['start'] if 'start' in action_params else 0
             end = action_params['end'] if 'end' in action_params else len(target_value)
             return target_value[start:end]
 
         if action_name == 'concat':
+            logging.info(f"{SERVICE}concat action")
             prefix = action_params['prefix'] if 'prefix' in action_params else ''
             suffix = action_params['suffix'] if 'suffix' in action_params else ''
             return prefix+target_value+suffix
 
         if action_name == 'createVar':
+            logging.info(f"{SERVICE}createVar action")
             var = self.create_execution_var(action_params)
             self.execution_vars[var[0]] = var[1]
             return var
 
         if action_name == 'saveToFile':
+            logging.info(f"{SERVICE}saveToFile action")
             dateTimeObj = datetime.now()
+            file_name_prefix = action_params['name_prefix'] if 'name_prefix' in action_params else None
+
             if action_params['longName']:
-                file_name = action_params['to']+"-"+self.file_name+"-"+str(dateTimeObj)
+                file_name = action_params['to']+"-"+str(dateTimeObj)
             else:
                 file_name = action_params['to']
+
+            if file_name_prefix:
+                if '$' in file_name_prefix:
+                    file_name_prefix = self.execution_vars[file_name_prefix[1:]]
+                file_name = file_name_prefix+"_"+file_name
+
 
             if 'dir' in action_params:
                 dir_name = action_params['dir']
@@ -263,6 +316,7 @@ class WebSiteScarperWorker(WorkerAbstract):
 
 
             if action_params['fileType'] == 'json':
+
                 file_name = file_name+".json"
                 with open(file_name, 'a') as file:
                     json.dump(target_value, file, indent=4)
@@ -273,6 +327,7 @@ class WebSiteScarperWorker(WorkerAbstract):
                 target_value.to_csv(file_name, index=False, sep=',', encoding='utf-8')
 
         if action_name == 'addToVar':
+            logging.info(f"{SERVICE}addToVar action")
             var_name = action_params['varName']
             var_type = action_params['varType']
             var_key = action_params['varKey'] if 'varKey' in action_params else None
@@ -296,6 +351,7 @@ class WebSiteScarperWorker(WorkerAbstract):
             return target_value
 
         if action_name == 'removeVar':
+            logging.info(f"{SERVICE}removeVar action")
             var_name = action_params['varName']
             var_type = action_params['varType']
             var_key = action_params['varKey'] if 'varKey' in action_params else None
@@ -311,10 +367,12 @@ class WebSiteScarperWorker(WorkerAbstract):
                 self.execution_vars[var_name].pop(var_key)
 
         if action_name == 'getVar':
+            logging.info(f"{SERVICE}getVar action")
             var_name = action_params['varName']
             return self.execution_vars[var_name]
 
         if action_name == 'cleanVar':
+            logging.info(f"{SERVICE}cleanVar action")
             var_name = action_params['varName']
             if type(self.execution_vars[var_name]) == list:
                 self.execution_vars[var_name] = []
@@ -323,7 +381,7 @@ class WebSiteScarperWorker(WorkerAbstract):
             else:
                 self.execution_vars[var_name] = ""
 
-    def HTMLpath(self, soup , type, HTMLtype, id_, class_, exclude):
+    def HTMLpath(self, soup , type, HTMLtype, id_, class_,attr,  exclude):
         logging.debug(f"{DRIVER_PREFIX}Going to scrap - {HTMLtype}, id - {id_}, class - {class_}")
         sub_soup = None
         if type == 'single':
@@ -331,6 +389,8 @@ class WebSiteScarperWorker(WorkerAbstract):
                 sub_soup = soup.find(HTMLtype, id=id_)
             elif class_:
                 sub_soup = soup.find(HTMLtype, class_=class_)
+            elif attr:
+                sub_soup = soup.find(HTMLtype, attrs=attr)
             else:
                 sub_soup = soup.find(HTMLtype)
         else:
@@ -338,16 +398,20 @@ class WebSiteScarperWorker(WorkerAbstract):
                 sub_soup = soup.findAll(HTMLtype, id=id_)
             elif class_:
                 sub_soup = soup.findAll(HTMLtype, class_=class_)
+            elif attr:
+                sub_soup = soup.findAll(HTMLtype, attrs=attr)
             else:
                 sub_soup = soup.findAll(HTMLtype)
 
         logging.debug(f"{DRIVER_PREFIX}Going to exclude tags")
         # exclude by identifier
         if exclude:
-            for identifier, value_to_exclude in exclude.items():
+            for item in exclude:
+                html_type = item['type']
+                value_to_exclude = item['value']
                 for elem in sub_soup:
-                   if elem.has_attr(identifier):
-                        if value_to_exclude == elem.get('id'):
+                    if elem.has_attr(html_type) or elem.name == html_type:
+                        if value_to_exclude == elem.get('id') or value_to_exclude == elem.text or value_to_exclude in elem.get('class'):
                             sub_soup.remove(elem)
 
         return sub_soup
@@ -573,17 +637,21 @@ class WebSiteScarperWorker(WorkerAbstract):
         {column name: <idx of the html element in the branch param> or static value  to use as pre defined column in the csv)
         :return: pandas data frame represnt csv table
         '''
+        pre_def_columns_completed = dict()
+        for key, val in pre_defined_columns.items():
+            regexp_res = re.search(r"\[([A-Za-z0-9_]+)\]", val)
+            pre_def_columns_completed[key] = branch[int(regexp_res.group(1))].text
 
         if html_table_idx:
-            pre_def_columns_completed = dict()
-            for key,val in pre_defined_columns.items():
-                regexp_res = re.search(r"\[([A-Za-z0-9_]+)\]", val)
-                pre_def_columns_completed[key] = branch[int(regexp_res.group(1))].text
             return self.table2csv(soup=branch[html_table_idx], pre_defined_columns=pre_def_columns_completed)
-
         else:
-            #todo - need to implement conversion of flat branch to csv (row)
-            pass
+            data=[]
+            headers=[]
+            for key,val in pre_def_columns_completed.items():
+                data.append(val)
+                headers.append(key)
+            data_frame = pd.DataFrame(data=[data], columns=headers)
+            return data_frame
 
 
 
@@ -673,6 +741,7 @@ if __name__ == '__main__':
     parser.add_argument('--logLevel', required=False, type=str, default="INFO")
     parser.add_argument('--scrapFlow', required=True, type=str, default=None)
     parser.add_argument('--urlToScrap', required=True, type=str, default=None)
+    parser.add_argument('--title', required=False, type=str, default="ad hoc title")
 
     args = parser.parse_args()
 
@@ -683,7 +752,7 @@ if __name__ == '__main__':
 
     if args.scrapFlow and args.urlToScrap:
         ws_scraper = WebSiteScarperWorker()
-        ws_scraper.work({'params': {"service_name": "adHoc execution"},
+        ws_scraper.work({'params': {"title": args.title},
                          'payload': {'scrap_flow': args.scrapFlow,
                                      'url_to_scrap': args.urlToScrap}})
 

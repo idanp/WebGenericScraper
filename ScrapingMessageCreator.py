@@ -35,15 +35,16 @@ class MessageCreator(MessageCreatorAbstract):
 
         else:
             with open(self.urls_file_path, 'r') as file:
-                urls = json.load(file)
+                content = json.load(file)
 
-            for service_name, url in urls.items():
-                work = dict(
-                    params=dict(worker_driver='WebSitesScrapingWorker',service_name=service_name),
-                    payload=dict(scrap_flow=self.scraping_flow, url_to_scrap=url)
-                )
-                logging.debug(f"{DRIVER_PREFIX} Going to send the work - {work}")
-                queue.put(work)
+            for title, urls in content.items():
+                for url in urls:
+                    work = dict(
+                        params=dict(worker_driver='WebSitesScrapingWorker',title=title),
+                        payload=dict(scrap_flow=self.scraping_flow, url_to_scrap=url)
+                    )
+                    logging.debug(f"{DRIVER_PREFIX} Going to send the work - {work}")
+                    queue.put(work)
 
 
 
