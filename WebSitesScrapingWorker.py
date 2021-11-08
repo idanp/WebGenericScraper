@@ -700,8 +700,8 @@ def test():
     ws_scraper = WebSiteScarperWorker()
     #ws_scraper.work({'params':{"service_name":"AWS bla"},'payload':{'scrap_flow':'../awsapiactionurl_scrap_flow.yml', 'url_to_scrap':'https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonappflow.html'}})
     #ws_scraper.work({'params': {}, 'payload': {'scrap_flow': '../aws_iam_services_scraper.yml','url_to_scrap': 'https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-services-that-work-with-iam.html'}})
-    #ws_scraper.work({'params': {'worker_driver': 'WebSitesScrapingWorker', 'title': 'adHoc'}, 'payload': {'scrap_flow': 'scraper_flows/azure_root_url_scrap.yml', 'url_to_scrap': 'https://docs.microsoft.com/en-us/rest/api/?view=Azure'}})
-    
+    ws_scraper.work({'params': {'worker_driver': 'WebSitesScrapingWorker', 'title': 'adHoc'}, 'payload': {'scrap_flow': 'scraper_flows/azure_root_url_scrap.yml', 'url_to_scrap': 'https://docs.microsoft.com/en-us/rest/api/?view=Azure'}})
+
 
 
 def print_help():

@@ -3,7 +3,7 @@ import setuptools
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-VERSION='0.0.16'
+VERSION='0.0.20'
 setuptools.setup(
      name='WebGenericScraper',
      version=VERSION,
@@ -14,7 +14,7 @@ setuptools.setup(
      long_description='file: README.md',
      long_description_content_type="text/markdown",
      url="https://github.com/idanp/WebGenericScraper",
-     install_requires=['WLO', 'selenium', 'webdriver_manager', 'pandas', 'colorama','bs4'],
+     install_requires=['WLO', 'selenium', 'webdriver-manager', 'pandas', 'colorama','bs4', 'pyyaml'],
      packages=setuptools.find_packages(),
      classifiers=[
          "Programming Language :: Python :: 3",
