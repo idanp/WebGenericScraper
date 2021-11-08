@@ -10,7 +10,9 @@ import pandas as pd
 import os
 import yaml
 import re
-
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium import webdriver
+import time
 from colorama import Fore
 from colorama import Style
 
@@ -90,7 +92,7 @@ class WebSiteScarperWorker(WorkerAbstract):
         from selenium import webdriver
         import time
 
-        driver = webdriver.Chrome()
+        driver = webdriver.Chrome(ChromeDriverManager().install())
         driver.get(URL)
         time.sleep(5)
 
@@ -153,8 +155,7 @@ class WebSiteScarperWorker(WorkerAbstract):
         return elements
 
     def get_html_from_js(self, URL):
-        from selenium import webdriver
-        import time
+
 
         driver = webdriver.Chrome()
         driver.get(URL)
@@ -694,14 +695,13 @@ def init():
 
 #unit test
 def test():
+    logging.basicConfig(format='[%(asctime)s -%(levelname)s] (%(processName)-10s) %(message)s')
     dateTimeObj = datetime.now()
     ws_scraper = WebSiteScarperWorker()
     #ws_scraper.work({'params':{"service_name":"AWS bla"},'payload':{'scrap_flow':'../awsapiactionurl_scrap_flow.yml', 'url_to_scrap':'https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonappflow.html'}})
     #ws_scraper.work({'params': {}, 'payload': {'scrap_flow': '../aws_iam_services_scraper.yml','url_to_scrap': 'https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-services-that-work-with-iam.html'}})
-    ws_scraper.work({'params': {"service_name": "Azure bla"},
-                     'payload': {'scrap_flow': 'azure_action_scrap_flow.yml',
-                                 'url_to_scrap': 'https://docs.microsoft.com/en-us/azure/role-based-access-control/resource-provider-operations'}})
-
+    #ws_scraper.work({'params': {'worker_driver': 'WebSitesScrapingWorker', 'title': 'adHoc'}, 'payload': {'scrap_flow': 'scraper_flows/azure_root_url_scrap.yml', 'url_to_scrap': 'https://docs.microsoft.com/en-us/rest/api/?view=Azure'}})
+    
 
 
 def print_help():

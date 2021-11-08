@@ -3,5 +3,5 @@ import os
 
 
 from WebSitesScrapingWorker import *
-os.chdir('../')
+#os.chdir('../')
 test()

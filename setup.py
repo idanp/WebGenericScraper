@@ -14,7 +14,7 @@ setuptools.setup(
      long_description='file: README.md',
      long_description_content_type="text/markdown",
      url="https://github.com/idanp/WebGenericScraper",
-     install_requires=['WLO', 'selenium'],
+     install_requires=['WLO', 'selenium', 'webdriver_manager', 'pandas', 'colorama','bs4'],
      packages=setuptools.find_packages(),
      classifiers=[
          "Programming Language :: Python :: 3",
